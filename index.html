@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SIEG.AI · Germany Application Intelligence — AI Applicant Copilot</title>
+    <meta name="description" content="From your documents to your next step — SIEG.AI helps you understand, verify, and navigate your Germany higher education and career application." />
+    <meta property="og:title" content="SIEG.AI · Germany Application Intelligence" />
+    <meta property="og:description" content="Dedicated AI intelligence platform for international students and professionals aiming for Germany." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700;800&display=swap" rel="stylesheet">
+    <script>
+      /* Step 10: Prevent flash of unstyled theme on initial load */
+      (function() {
+        try {
+          var stored = localStorage.getItem('sieg-theme');
+          var resolved = stored;
+          if (!stored || stored === 'system') {
+            resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          if (resolved === 'dark' || resolved === 'light') {
+            document.documentElement.classList.add(resolved);
+            document.documentElement.dataset.theme = resolved;
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="font-sans antialiased min-h-screen selection:bg-[#E30613] selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

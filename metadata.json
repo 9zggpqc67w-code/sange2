@@ -1,0 +1,6 @@
+{
+  "name": "AI Applicant Copilot",
+  "description": "Your journey to Germany, guided by AI. Modern applicant copilot for international students and professionals aiming for Germany.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

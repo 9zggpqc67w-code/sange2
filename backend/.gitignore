@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.pgdata/
+uploads/*
+!uploads/.gitkeep
+src/generated/
+*.tsbuildinfo
+*.log

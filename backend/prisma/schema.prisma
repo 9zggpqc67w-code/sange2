@@ -1,0 +1,258 @@
+// Data model for the AI Applicant Copilot (MVP). PostgreSQL is the durable source of truth.
+//
+// Nothing that was ever learned about an applicant is deleted:
+//  - Claim rows are append-only evidence. A document re-processing creates a new DocumentRun;
+//    the claims of the previous run stay in the table and simply stop being "active".
+//  - Every qualification run is stored as an immutable Evaluation snapshot (with the exact
+//    inputs it used, so it can be replayed).
+//  - Applicant answers live in Clarification.
+// Derived data (field states, gaps) is not stored as rows; it is computed from the active
+// claims and snapshotted as JSON inside each Evaluation.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Where the applicant is in the journey. Always derived by the workflow, never set by clients.
+enum Stage {
+  NEW // no processed evidence yet
+  DOCUMENTS_PROCESSING // at least one document is being processed
+  PROFILE_BUILT // evidence extracted, qualification not (yet) evaluated
+  INCOMPLETE // evaluated: evidence is missing / unverified
+  ACTION_REQUIRED // evaluated: the applicant must resolve a conflict or an unmet requirement
+  READY // evaluated: ready under the (DEMO) requirements
+}
+
+enum RunStatus {
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum EvaluationTrigger {
+  DOCUMENT_PROCESSED
+  MANUAL
+  APPLICANT_UPDATE
+}
+
+enum ClarificationStatus {
+  OPEN
+  ANSWERED
+  DISMISSED
+  SUPERSEDED
+}
+
+enum DocType {
+  CV
+  DEGREE
+  TRANSCRIPT
+  LANGUAGE_CERT
+  EXPERIENCE_LETTER
+  SOP
+  UNKNOWN
+}
+
+enum DocStatus {
+  UPLOADED
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum TextMethod {
+  TEXT_LAYER
+  OCR
+  VISION
+}
+
+enum ClaimSource {
+  DOCUMENT
+  APPLICANT
+  AI_DERIVED
+}
+
+enum ActionType {
+  ASK_CLARIFICATION
+  REQUEST_DOCUMENT
+  SHOW_MISSING_REQUIREMENT
+  RECOMMEND_NEXT_STEP
+  NO_ACTION
+}
+
+enum ActionStatus {
+  PENDING
+  ANSWERED
+  SUPERSEDED
+  DONE
+}
+
+model Applicant {
+  id             String          @id @default(uuid())
+  name           String
+  email          String?
+  goal           String?
+  programLabel   String?
+  stage          Stage           @default(NEW)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  documents      Document[]
+  claims         Claim[]
+  evaluations    Evaluation[]
+  actions        AgentAction[]
+  clarifications Clarification[]
+}
+
+model Document {
+  id            String        @id @default(uuid())
+  applicantId   String
+  applicant     Applicant     @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  filename      String
+  storagePath   String
+  mime          String
+  docType       DocType       @default(UNKNOWN)
+  status        DocStatus     @default(UPLOADED)
+  error         String?
+  textMethod    TextMethod?
+  // [{ pageNo: number, text: string }]
+  pages         Json?
+  ocrConfidence Float?
+  // Audit trail of the last ingestion run: doc-type source, per-page text method,
+  // accepted claim count and every claim that was REJECTED by grounding (with reason).
+  extraction    Json?
+  createdAt     DateTime      @default(now())
+  claims        Claim[]
+  runs          DocumentRun[]
+
+  @@index([applicantId])
+}
+
+// One processing attempt of a document. Re-processing creates version N+1; at most one DONE
+// run per document is active. Claims belong to the run that produced them, so the history of
+// what each run extracted is kept forever. (Document.pages/textMethod/extraction mirror the
+// active run for convenience.) A FAILED run never deactivates the previous active run.
+model DocumentRun {
+  id          String      @id @default(uuid())
+  documentId  String
+  document    Document    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version     Int
+  status      RunStatus   @default(PROCESSING)
+  isActive    Boolean     @default(false)
+  docType     DocType?
+  textMethod  TextMethod?
+  pages       Json?
+  extraction  Json?
+  error       String?
+  createdAt   DateTime    @default(now())
+  completedAt DateTime?
+  claims      Claim[]
+
+  @@unique([documentId, version])
+  @@index([documentId, isActive])
+}
+
+// Immutable evidence: rows are only ever appended (or marked superseded).
+model Claim {
+  id             String       @id @default(uuid())
+  applicantId    String
+  applicant      Applicant    @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  fieldKey       String // e.g. "degree.gpa"
+  entryKey       String? // distinguishes repeated items, e.g. "job-2"
+  rawValue       String
+  value          Json? // normalized value
+  source         ClaimSource
+  documentId     String?
+  document       Document?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  // The processing run that produced this claim (null for applicant-provided claims).
+  // A document claim is ACTIVE when its run is active; see evidence/active-claims.ts.
+  runId          String?
+  run            DocumentRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  page           Int?
+  quote          String? // verbatim text from the document
+  isResolution   Boolean      @default(false) // explicit applicant choice for a conflict
+  supersededById String?
+  confidence     Float?
+  createdAt      DateTime     @default(now())
+
+  @@index([applicantId, fieldKey])
+  @@index([runId])
+}
+
+// Immutable snapshot produced by every qualification run. Never updated, never overwritten:
+// the list of evaluations is the applicant's status history.
+model Evaluation {
+  id                String            @id @default(uuid())
+  applicantId       String
+  applicant         Applicant         @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  requirementSetId  String            @default("DEMO_MSC_COMPUTER_SCIENCE")
+  isDemo            Boolean           @default(true)
+  trigger           EvaluationTrigger @default(MANUAL)
+  triggerDocumentId String?
+  score             Int
+  verdict           String
+  // Journey stage this evaluation leads to (READY / ACTION_REQUIRED / INCOMPLETE).
+  outcome           Stage             @default(NEW)
+  fields            Json // fieldId -> { state, value, claimIds, conflictOptions? }
+  gaps              Json // [{ id, kind, fieldId?, severity, priority, message, requirementIds }]
+  requirements      Json // [{ requirementId, status, credit, message, claimIds, ... }]
+  breakdown         Json // readiness result: { score, verdict, readyThreshold, totalWeight, breakdown[] }
+  // Counts plus what changed since the previous evaluation (new/closed gaps, score delta).
+  summary           Json              @default("{}")
+  // Exactly what the evaluation was computed from: { claimIds, documents, evaluatedAt }.
+  inputs            Json              @default("{}")
+  inputHash         String            @default("")
+  createdAt         DateTime          @default(now())
+  actions           AgentAction[]
+  clarifications    Clarification[]
+
+  @@index([applicantId, createdAt])
+}
+
+model AgentAction {
+  id             String          @id @default(uuid())
+  applicantId    String
+  applicant      Applicant       @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  evaluationId   String?
+  evaluation     Evaluation?     @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  type           ActionType
+  gapId          String?
+  params         Json?
+  decision       Json? // full validated LLM output + fallbackUsed flag
+  status         ActionStatus    @default(PENDING)
+  answer         Json?
+  createdAt      DateTime        @default(now())
+  answeredAt     DateTime?
+  clarifications Clarification[]
+
+  @@index([applicantId, status])
+}
+
+// A question put to the applicant and the applicant's answer. This is the durable Q&A record;
+// AgentAction records what the agent decided. Stage 4 only persists; creating questions is the
+// agent's job and turning an answer into a claim/resolution is the re-evaluation step.
+model Clarification {
+  id                String              @id @default(uuid())
+  applicantId       String
+  applicant         Applicant           @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  prompt            String
+  gapId             String? // e.g. "CONFLICT:degree.graduationYear"
+  fieldId           String? // e.g. "degree.graduationYear"
+  claimIds          Json? // claims the question is about
+  evaluationId      String? // evaluation that raised it
+  evaluation        Evaluation?         @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
+  agentActionId     String?
+  agentAction       AgentAction?        @relation(fields: [agentActionId], references: [id], onDelete: SetNull)
+  status            ClarificationStatus @default(OPEN)
+  answer            Json? // { text?, value?, choice? }
+  resolutionClaimId String? // claim recorded because of this answer (set by re-evaluation)
+  createdAt         DateTime            @default(now())
+  answeredAt        DateTime?
+  updatedAt         DateTime            @updatedAt
+
+  @@index([applicantId, status])
+}
