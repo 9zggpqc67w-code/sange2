@@ -4,6 +4,7 @@
   "private": true,
   "description": "AI Applicant Copilot - NestJS backend",
   "scripts": {
+    "prebuild": "prisma generate",
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
