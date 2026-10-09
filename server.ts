@@ -812,6 +812,17 @@ export function createApp(): express.Express {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Enable CORS for separate frontend deployments
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // API Routes
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', db: 'in-memory-ready' });
