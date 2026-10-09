@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node server.ts",
-    "build": "esbuild src/backend-bundle.ts --bundle --platform=node --format=esm --packages=external --outfile=src/backend-bundle.js && vite build",
+    "build": "esbuild src/backend-bundle.ts --bundle --platform=node --format=esm --packages=external --outfile=src/backend-bundle.js && esbuild api/index.ts --bundle --platform=node --format=esm --packages=external --outfile=api/index.js && vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"

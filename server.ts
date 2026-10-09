@@ -4,7 +4,6 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
 // Domain logic imports
@@ -823,6 +822,21 @@ export function createApp(): express.Express {
     next();
   });
 
+  // Normalize Vercel serverless rewritten paths
+  app.use((req, res, next) => {
+    const matchedPath = req.headers['x-matched-path'] as string | undefined;
+    if (matchedPath && matchedPath !== '/api' && matchedPath !== '/api/index') {
+      req.url = matchedPath;
+    }
+    if (req.url.startsWith('/api/')) {
+      req.url = req.url.substring(4);
+    }
+    if (req.url === '/api') {
+      req.url = '/';
+    }
+    next();
+  });
+
   // API Routes
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', db: 'in-memory-ready' });
@@ -1141,7 +1155,14 @@ export function createApp(): express.Express {
 export const app = createApp();
 export default app;
 
-if (!process.env.VERCEL) {
+const isMainScript =
+  typeof process.argv[1] === 'string' &&
+  (process.argv[1].endsWith('server.ts') ||
+   process.argv[1].endsWith('server.js') ||
+   process.argv[1].endsWith('server.cjs') ||
+   process.argv[1].endsWith('server.mjs'));
+
+if (isMainScript && !process.env.VERCEL) {
   async function start() {
     if (process.env.NODE_ENV === 'production') {
       app.use(express.static('dist'));
@@ -1149,6 +1170,7 @@ if (!process.env.VERCEL) {
         res.sendFile(path.resolve('dist/index.html'));
       });
     } else {
+      const { createServer: createViteServer } = await import('vite');
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: 'spa',

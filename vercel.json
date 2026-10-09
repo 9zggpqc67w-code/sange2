@@ -5,19 +5,19 @@
   "rewrites": [
     {
       "source": "/health",
-      "destination": "/api/index"
+      "destination": "/api"
     },
     {
       "source": "/applicants/(.*)",
-      "destination": "/api/index"
+      "destination": "/api"
     },
     {
       "source": "/applicants",
-      "destination": "/api/index"
+      "destination": "/api"
     },
     {
       "source": "/api/(.*)",
-      "destination": "/api/index"
+      "destination": "/api"
     },
     {
       "source": "/(.*)",
