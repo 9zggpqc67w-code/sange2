@@ -105,26 +105,9 @@ class AuthService {
 
     const record = this.users.get(cleanEmail);
     if (!record) {
-      // For smooth hackathon evaluation, if user enters any valid email with demo password, auto-register them
-      if (cleanEmail.includes('@') && password.length >= 6) {
-        const newUser: User = {
-          id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          name: cleanEmail.split('@')[0].replace('.', ' '),
-          email: cleanEmail,
-          createdAt: new Date().toISOString(),
-        };
-        this.users.set(cleanEmail, {
-          user: newUser,
-          passwordHash: hashPassword(password),
-        });
-        this.saveRegistry();
-        this.setSession(newUser);
-        return { success: true, user: newUser };
-      }
-
       return {
         success: false,
-        error: 'No account found with this email. You can create a new account below or use the Demo Login.',
+        error: 'No account found with this email. Please create an account or use Demo Login.',
       };
     }
 
